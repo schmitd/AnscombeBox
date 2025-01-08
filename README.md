@@ -1,0 +1,1 @@
+Implementation of G. E. M. Anscombe's "Causality and Determination" thought experiment. Based on Thomas Müller's paper and pseudocode [“Let’s build an Anscombe box”: assessing Anscombe’s rebuttal of the statistics objection against indeterminism-based free agency](https://link.springer.com/article/10.1007/s11229-022-03565-6)
