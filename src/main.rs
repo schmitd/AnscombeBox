@@ -14,21 +14,28 @@ const BMP : [[bool; 5]; 5] =
             [false, false, true,  false, false],
             [false, false, true,  false, false]];*/
 
-fn goodness(cords : &Point2, side : &Array2<bool>, bmp : &Array2<bool>) -> f32 {
-    if  cords.0 + bmp.dim().0 < side.len() && cords.1 + bmp.dim().1 < side[0].len() {
+fn goodness(cords: &Point2, side: &ArrayView2<bool>, bmp: &ArrayView2<bool>) -> f32 {
+    let (bmp_rows, bmp_cols) = bmp.dim();
+    let (side_rows, side_cols) = side.dim();
+    
+    // Check if the window fits within side dimensions
+    if cords.0 + bmp_rows > side_rows || cords.1 + bmp_cols > side_cols {
         return 0.0;
     }
-    let window : Vec<&[bool]> = side.into_iter()
-        .map(|v| { &v[cords.0..cords.0 + bmp.len()]}).collect();
-    let bits = xor(&window, bmp);
-    let mut tot = 0;
-    for i in bits.into_iter().flatten() {
-        if !i {tot += 1};
-    }
-    tot as f32 / bmp.len().pow(2) as f32
+    
+    // Extract the window from side using ndarray slicing
+    let window = side.slice(s![cords.0..cords.0 + bmp_rows, cords.1..cords.1 + bmp_cols]);
+    
+    // Compute XOR between window and bmp
+    let bits = window.iter().zip(bmp.iter()).map(|(&a, &b)| a != b);
+    
+    // Count true values (mismatches) and compute goodness
+    let tot = bits.filter(|&x| x).count();
+    tot as f32 / (bmp_rows * bmp_cols) as f32
 }
 
-fn xor(slice : &[&[bool]], bmp : &Array2<bool>) -> Vec<Vec<bool>> {
+/*
+fn xor(slice: &[&[bool]], bmp: &Array2<bool>) -> Vec<Vec<bool>> {
     let mut ret = vec![vec![false; bmp.len()]; bmp.len()];
     for (ia , ib , iret)  in izip!(slice, bmp, ret.iter_mut()) { // TODO:iter w ndarr
         for (ja, jb, jret) in izip!(ia.iter(), ib, iret.iter_mut()) {
@@ -41,79 +48,76 @@ fn xor(slice : &[&[bool]], bmp : &Array2<bool>) -> Vec<Vec<bool>> {
     }
     ret
 }
+*/
 
-fn rand_point(n : usize) ->  Vec<usize> {
-    let mut ret : Vec<usize> = Vec::new();
+fn rand_point(n: usize) -> Vec<usize> {
     let mut rng = rand::thread_rng();
-    for _ in 0..n {
-        let r: f64 = rng.gen();
-        let r: usize = (r * L as f64).floor() as usize;
-        ret.push(r);
-    }
-    ret
+    (0..n)
+        .map(|_| (rng.gen::<f64>() * L as f64).floor() as usize)
+        .collect()
 }
 
-fn collides(s : Point2, sites : LinkedList<Option<Point2>>) -> bool {
+fn collides(s: Point2, sites: LinkedList<Option<Point2>>) -> bool {
+    // TODO: Implement collision detection
+    // Consider checking if point s overlaps with any site in sites
     unimplemented!();
 }
 
 fn init_state() -> Array3<bool> {
+    // TODO: Implement state initialization
+    // Consider returning Array3::zeros((L, L, L)) or similar
     unimplemented!();
 }
 
 fn main() {
-    let BMP : Array2<bool> = array![[false, false, true,  false, false],
-                                    [false, false, true,  false, false],
-                                    [true,  true,  true,  true,  true],
-                                    [false, false, true,  false, false],
-                                    [false, false, true,  false, false]];
-    assert!(BMP.dim().0 == BMP.dim().1, "number of arrays == length of first array");
+    let bmp: Array2<bool> = array![
+        [false, false, true, false, false],
+        [false, false, true, false, false],
+        [true, true, true, true, true],
+        [false, false, true, false, false],
+        [false, false, true, false, false]
+    ];
+    assert!(bmp.dim().0 == bmp.dim().1, "number of arrays == length of first array");
     
-    let mut tot : usize = 0;
-    for b in BMP.iter() {
-        tot += *b as usize;
-    }
-    let r = tot / BMP.len().pow(2); 
-    let mut rng = rand::thread_rng();
-    let mut state = Array3::<bool>::uninit((L, L, L));
+    let tot: usize = bmp.iter().map(|&b| b as usize).sum();
+    let r = tot / (bmp.dim().0 * bmp.dim().1);
+    
+    // Initialize state with zeros
+    let mut state = Array3::<bool>::from_elem((L, L, L), false);
     let mut i = 0;
 
-    // flip some bits
+    // Flip some bits
     while i < L.pow(3) * r {
-        /*
-        let x: f64 = rng.gen();
-        let x: usize = (x * L as f64).floor() as usize;
-        let y: f64 = rng.gen();
-        let y: usize = (y * L as f64).floor() as usize;
-        let z: f64 = rng.gen();
-        let z: usize = (z * L as f64).floor() as usize;
-        */
-        let (x, y, z) = rand_point(3).into_iter().collect_tuple().unwrap();
-        if state.get((x, y, z)).unwrap() == false {
-           state[x][y][z] = true;
-           i += 1;
+        let coords = rand_point(3);
+        let (x, y, z) = (coords[0], coords[1], coords[2]);
+        if !state[[x, y, z]] {
+            state[[x, y, z]] = true;
+            i += 1;
         }
     }
-    // What's good?
-    let side = state.as_slice();
-    const n_sites : usize = 6;
-    const n_trials : usize = 100;
+    
+    // Get 2D view for goodness calculation (assuming we want XY plane at z=0)
+    let side = state.slice(s![.., .., 0]);
+    
+    const N_SITES: usize = 6;
+    const N_TRIALS: usize = 100;
     let mut sites: LinkedList<Option<Point2>> = LinkedList::new();
-    for i in 0..n_sites {
-        let (mut best_site, mut best_goodness) : (Option<Point2>, f64) = (None, 0.0);
-        let mut g : f64 = 0.0;
-        for j in 0..n_trials {
-            let s: Point2 = rand_point(3).into_iter().collect_tuple().unwrap();
-            if collides(s, sites) { 
-                g = 0.0;
-            } else { 
-                g = goodness(&s, side, BMP.as_slice().unwrap());
-            }
+    
+    for _ in 0..N_SITES {
+        let (mut best_site, mut best_goodness): (Option<Point2>, f32) = (None, 0.0);
+        for _ in 0..N_TRIALS {
+            let coords = rand_point(2);
+            let s: Point2 = (coords[0], coords[1]);
+            let g = if collides(s, sites.clone()) {
+                0.0
+            } else {
+                goodness(&s, &side, &bmp.view())
+            };
             if g > best_goodness {
                 best_goodness = g;
                 best_site = Some(s);
             }
-            sites.push_back(best_site);
         }
+        sites.push_back(best_site);
     }
 }
