@@ -4,7 +4,7 @@ use rand::prelude::*;
 use std::vec;
 
 type Point2 = (usize, usize);
-// type Point3 = (usize, usize, usize);
+type Point3 = (usize, usize, usize);
 const L: usize = 20;
 /*
 const BMP : [[bool; 5]; 5] =
@@ -65,7 +65,7 @@ fn collides(s: Point2, sites: &Vec<Option<Point2>>, site_shape: (usize, usize)) 
     unimplemented!()
 }
 
-fn random_direct_neighbor(point: Point3, state: &Array3<bool>) -> Point3 {
+fn random_direct_neighbor(point: Point3, state: &Array3<bool>) -> Option<Point3> {
     unimplemented!()
 }
 
@@ -113,54 +113,8 @@ fn init_state() -> Array3<bool> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod tests;
 
-    #[test]
-    fn test_goodness() {
-        let bmp: Array2<bool> = array![
-            [false, false, true, false, false],
-            [false, false, true, false, false],
-            [true, true, true, true, true],
-            [false, false, true, false, false],
-            [false, false, true, false, false]
-        ];
-
-        let side: Array3<bool> = Array3::from_elem((5, 5, 1), true);
-        let cords: Point2 = (0, 0);
-
-        let goodness = goodness(&cords, &side, &bmp);
-        assert_eq!(
-            goodness, 0.36,
-            "Goodness should be 0.36 for the given bitmap and side"
-        );
-    }
-
-    #[test]
-    fn test_collides_true() {
-        let mut sites: Vec<Option<Point2>> = Vec::new();
-        sites.push(Some((2, 1)));
-        let site_shape: (usize, usize) = (3, 3);
-        let s: Point2 = (0, 0);
-        assert_eq!(collides(s, &sites, site_shape), true);
-    }
-
-    #[test]
-    fn test_collides_false() {
-        let mut sites: Vec<Option<Point2>> = Vec::new();
-        sites.push(Some((3, 1)));
-        let site_shape: (usize, usize) = (3, 3);
-        let s: Point2 = (0, 0);
-        assert_eq!(collides(s, &sites, site_shape), false);
-    }
-
-    #[test]
-    fn test_random_direct_neighbor_isolated_none() {
-        let point: Point3 = (0, 0, 0);
-        let state: Array3<bool> = Array3::from_elem((1, 1, 1), false);
-        assert_eq!(random_direct_neighbor(point, &state), None);
-    }
-}
 
 fn main() {
     let bmp: Array2<bool> = array![
@@ -230,7 +184,7 @@ fn main() {
         step += 1;
         let point = rand_point(3);
         let (x1, y1, z1) = (point[0], point[1], point[2]);
-        let (x2, y2, z2) = random_direct_neighbor(x1, y1, z1);
+        let (x2, y2, z2) = random_direct_neighbor((x1, y1, z1), &state).unwrap();
         let p_anyway = 0.01;
         let p_exchange = 0.7;
         try_exchange(
