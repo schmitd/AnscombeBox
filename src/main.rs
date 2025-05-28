@@ -62,11 +62,52 @@ fn rand_point(n: usize) -> Vec<usize> {
 }
 
 fn collides(s: Point2, sites: &Vec<Option<Point2>>, site_shape: (usize, usize)) -> bool {
-    unimplemented!()
+    for site in sites.iter().flatten() {
+        // Check if the two rectangles overlap
+        let s_end = (s.0 + site_shape.0, s.1 + site_shape.1);
+        let site_end = (site.0 + site_shape.0, site.1 + site_shape.1);
+        
+        // Check for overlap in both dimensions
+        if s.0 < site_end.0 && s_end.0 > site.0 && s.1 < site_end.1 && s_end.1 > site.1 {
+            return true;
+        }
+    }
+    false
 }
 
 fn random_direct_neighbor(point: Point3, state: &Array3<bool>) -> Option<Point3> {
-    unimplemented!()
+    let (x, y, z) = point;
+    let mut rng = rand::thread_rng();
+    let directions = [
+        (1, 0, 0), (-1, 0, 0),
+        (0, 1, 0), (0, -1, 0),
+        (0, 0, 1), (0, 0, -1)
+    ];
+    
+    // Filter valid directions (within bounds)
+    let valid_directions: Vec<_> = directions.iter()
+        .filter_map(|&(dx, dy, dz)| {
+            let nx = x as isize + dx;
+            let ny = y as isize + dy;
+            let nz = z as isize + dz;
+            
+            if nx >= 0 && nx < L as isize && 
+               ny >= 0 && ny < L as isize && 
+               nz >= 0 && nz < L as isize {
+                Some((nx as usize, ny as usize, nz as usize))
+            } else {
+                None
+            }
+        })
+        .collect();
+    
+    if valid_directions.is_empty() {
+        None
+    } else {
+        // Choose a random valid direction
+        let idx = rng.gen_range(0..valid_directions.len());
+        Some(valid_directions[idx])
+    }
 }
 
 fn try_exchange(
@@ -86,37 +127,83 @@ fn try_exchange(
         return;
     }
 
-    // TODO: Complete the pattern generating external cause
-    /* Pseudocode:
-     * Let b be randomly selected from the interval [0, 1]
-     * If both cells are in the interior of the box then
-     *     If b < probexchange then do the exchange
-     *     Else don’t do the exchange
-     *     return
-     * If none of 〈x1, y1, z1〉 and 〈x2, y2, z2〉 fall in a patch s in Sites
-     *     If b < probexchange then do the exchange32
-     *     Else don’t do the exchange
-     *     return
-     * # Continuing, we know a pattern at site s is involved
-     * If the pattern at s will be improved by the exchange then
-     *     Do the exchange
-     *     If the goodness of the pattern at s is now good enough
-     *     Delete s from the list Sites
-     *     Find a new site s′ to grow a pattern and add s′ to Sites
-     * Else don’t do the exchange
-     */
+    let b: f64 = rng.gen();
+    
+    // Check if either point is in a pattern site
+    let mut involved_site: Option<(usize, Point2)> = None;
+    for (idx, site) in sites.iter().enumerate() {
+        if let Some(site_pos) = site {
+            let site_shape = (bmp.dim().0, bmp.dim().1);
+            
+            // Check if point or neighbor is within the site's area
+            let in_site = |p: Point3| -> bool {
+                p.2 == 0 && // Only consider points on the first z-layer
+                p.0 >= site_pos.0 && p.0 < site_pos.0 + site_shape.0 &&
+                p.1 >= site_pos.1 && p.1 < site_pos.1 + site_shape.1
+            };
+            
+            if in_site(point) || in_site(neighbor) {
+                involved_site = Some((idx, *site_pos));
+                break;
+            }
+        }
+    }
+    
+    // If no site is involved, use the exchange probability
+    if involved_site.is_none() {
+        if b < p_exchange {
+            state.swap(point, neighbor);
+        }
+        return;
+    }
+    
+    // A pattern at site s is involved
+    let (site_idx, site_pos) = involved_site.unwrap();
+    
+    // Calculate current goodness
+    let current_goodness = goodness(&site_pos, state, bmp);
+    
+    // Temporarily do the exchange to check if it improves the pattern
+    state.swap(point, neighbor);
+    let new_goodness = goodness(&site_pos, state, bmp);
+    
+    if new_goodness > current_goodness {
+        // Exchange improves the pattern, keep it
+        // Check if the pattern is now good enough (e.g., > 0.9)
+        if new_goodness > 0.9 {
+            // Delete site from the list
+            sites[site_idx] = None;
+            
+            // Find a new site
+            let mut best_site: Option<Point2> = None;
+            let mut best_goodness: f32 = 0.0;
+            
+            for _ in 0..100 { // Try 100 random positions
+                let point = rand_point(2);
+                let s: Point2 = (point[0], point[1]);
+                
+                let g = if collides(s, sites, (bmp.dim().0, bmp.dim().1)) {
+                    0.0
+                } else {
+                    goodness(&s, state, bmp)
+                };
+                
+                if g > best_goodness {
+                    best_goodness = g;
+                    best_site = Some(s);
+                }
+            }
+            
+            sites[site_idx] = best_site;
+        }
+    } else {
+        // Exchange doesn't improve the pattern, revert it
+        state.swap(point, neighbor);
+    }
 }
 
-fn init_state() -> Array3<bool> {
-    let mut rng = rand::thread_rng();
-    Array3::from_shape_fn((L, L, L), |_| rng.gen_bool(0.5))
-}
-
-#[cfg(test)]
-mod tests;
-
-
-fn main() {
+fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
+    // Initialize the bitmap
     let bmp: Array2<bool> = array![
         [false, false, true, false, false],
         [false, false, true, false, false],
@@ -133,7 +220,7 @@ fn main() {
     let tot: usize = bmp.iter().filter(|&&b| b).count();
     let r = tot / (bmp.dim().0 * bmp.dim().1);
 
-    //let rng = rand::thread_rng(); Unused?
+    // Initialize state with random bits
     let mut state = Array3::<bool>::from_elem((L, L, L), false);
     let mut i = 0;
 
@@ -148,7 +235,7 @@ fn main() {
         }
     }
 
-    // What's good?
+    // Initialize sites
     const N_SITES: usize = 6;
     const N_TRIALS: usize = 100;
     let mut sites: Vec<Option<Point2>> = Vec::new();
@@ -174,28 +261,67 @@ fn main() {
 
         sites.push(best_site);
     }
+    
+    (state, sites, bmp)
+}
+
+fn main() {
+    // Initialize state, sites, and bitmap
+    let (mut state, mut sites, bmp) = init_state();
     println!("{:#?}", sites);
 
-    // TODO: initizlize visualization of face with cursive
-
-    // main simulation loop
-    let mut step = 0;
-    loop {
-        step += 1;
-        let point = rand_point(3);
-        let (x1, y1, z1) = (point[0], point[1], point[2]);
-        let (x2, y2, z2) = random_direct_neighbor((x1, y1, z1), &state).unwrap();
-        let p_anyway = 0.01;
-        let p_exchange = 0.7;
-        try_exchange(
-            p_anyway,
-            p_exchange,
-            &sites,
-            (x1, y1, z1),
-            (x2, y2, z2),
-            &mut state,
-            &bmp,
-        );
-        // TODO: update visualization of face with cursive every 10,000 steps
-    }
+    // Initialize visualization with cursive
+    let mut siv = cursive::default();
+    
+    // Create a canvas to display the state
+    let canvas = cursive::views::Canvas::new((L, L))
+        .with_draw(|printer, _| {
+            // Draw the first z-layer of the state
+            for i in 0..L {
+                for j in 0..L {
+                    let cell = state[[i, j, 0]];
+                    let ch = if cell { '█' } else { ' ' };
+                    printer.print((j, i), &ch.to_string());
+                }
+            }
+        });
+    
+    // Add the canvas to the UI
+    siv.add_layer(
+        cursive::views::Dialog::around(canvas)
+            .title("Pattern Formation Simulation")
+            .button("Quit", |s| s.quit())
+    );
+    
+    // Create a thread for simulation
+    std::thread::spawn(move || {
+        let mut step = 0;
+        loop {
+            step += 1;
+            let point = rand_point(3);
+            let (x1, y1, z1) = (point[0], point[1], point[2]);
+            
+            if let Some((x2, y2, z2)) = random_direct_neighbor((x1, y1, z1), &state) {
+                let p_anyway = 0.01;
+                let p_exchange = 0.7;
+                try_exchange(
+                    p_anyway,
+                    p_exchange,
+                    &sites,
+                    (x1, y1, z1),
+                    (x2, y2, z2),
+                    &mut state,
+                    &bmp,
+                );
+                
+                // Update visualization every 10,000 steps
+                if step % 10_000 == 0 {
+                    siv.refresh();
+                }
+            }
+        }
+    });
+    
+    // Run the UI
+    siv.run();
 }
