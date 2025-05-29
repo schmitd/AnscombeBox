@@ -2,11 +2,11 @@ use cursive::{View, Printer, Vec2};
 use ndarray::Array2;
 
 pub struct SideView {
-    side: &Array2<bool>,
+    side: Array2<bool>,
 }
 
 impl SideView {
-    pub fn new(side: &Array2<bool>) -> Self {
+    pub fn new(side: Array2<bool>) -> Self {
         Self {
             side,
         }
@@ -14,6 +14,10 @@ impl SideView {
 
     pub fn side(&self) -> &Array2<bool> {
         &self.side
+    }
+
+    pub fn update(&mut self, incoming: Array2<bool>) {
+        self.side = incoming;
     }
 }
 
@@ -23,9 +27,9 @@ impl View for SideView {
     }
 
     fn draw(&self, printer: &Printer) {
-        for (pos, value) in self.side.indexed_iter() {
-            let ch = if *value { '█' } else { ' ' };
-            printer.print((pos.0, pos.1), &ch.to_string());
+        for (pos, value) in self.side().indexed_iter() {
+            let ch = if *value { "█" } else { "." };
+            printer.print((pos.1, pos.0), &ch);
         }
     }
 }

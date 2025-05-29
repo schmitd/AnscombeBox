@@ -1,14 +1,17 @@
-use cursive::views::Dialog;
+use cursive::{views::{Dialog, NamedView, Canvas}, View, Printer, Vec2};
 use ui::SideView;
 use ndarray::*;
 use rand::prelude::*;
 use std::vec;
+// XXX use std::ops::Deref;
 
 mod ui;
 
 type Point2 = (usize, usize);
 type Point3 = (usize, usize, usize);
 const L: usize = 20;
+const N_SITES: usize = 6;
+const N_TRIALS: usize = 100;
 /*
 const BMP : [[bool; 5]; 5] =
            [[false, false, true,  false, false],
@@ -181,7 +184,7 @@ fn try_exchange(
             let mut best_site: Option<Point2> = None;
             let mut best_goodness: f32 = 0.0;
             
-            for _ in 0..100 { // Try 100 random positions
+            for _ in 0..N_TRIALS { // Try 100 random positions XXX maybe deduplicate this logic that's also in init_state??? Would that follow instructions?
                 let point = rand_point(2);
                 let s: Point2 = (point[0], point[1]);
                 
@@ -239,8 +242,6 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
     }
 
     // Initialize sites
-    const N_SITES: usize = 6;
-    const N_TRIALS: usize = 100;
     let mut sites: Vec<Option<Point2>> = Vec::new();
 
     for _ in 0..N_SITES {
@@ -268,43 +269,28 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
     (state, sites, bmp)
 }
 
-#[cfg(test)]
-mod tests;
-
-fn main() {
-    // Initialize state, sites, and bitmap
-    let (mut state, mut sites, bmp) = init_state();
-
+fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<bool>) {
     // Initialize visualization with cursive
     let siv = cursive::default();
-    let side_view = SideView::new(&state.slice(s![.., .., 0]).to_owned());
+    // let side_view = NamedView::new("side", SideView::new(state.slice(s![.., .., 0]).to_owned()));
     let mut siv = siv.into_runner();
     
-    // Create a canvas to display the state
-    //let canvas = cursive::views::Canvas::new((L, L))
-    //    .with_draw(|_, printer| {
-    //        // Draw the first z-layer of the state
-    //        for i in 0..L {
-    //            for j in 0..L {
-    //                let cell = state[[i, j, 0]];
-    //                let ch = if cell { '█' } else { ' ' };
-    //                printer.print((j, i), &ch.to_string());
-    //            }
-    //        }
-    //    });
-    
-    // Add the canvas to the UI
-    siv.add_layer(
-        Dialog::around(side_view)
-            .title("Pattern Formation Simulation")
-    );
-    
+    // Create Canvas without capturing state
+    let canvas = Canvas::new(state.slice(s![.., .., 0]).to_owned())
+        .with_draw(|grid: &Array2<bool>, printer: &Printer| {
+            for (pos, value) in grid.indexed_iter() {
+                let ch = if *value { "█" } else { "." };
+                printer.print((pos.1, pos.0), ch);
+            }
+        })
+        .with_required_size(|_, _| Vec2::new(L, L));
+
+    siv.add_layer(NamedView::new("canvas", canvas));
     siv.add_global_callback('q', |s| s.quit());
     siv.refresh();
 
-    // Create a thread for simulation
     let mut step = 0;
-    loop {
+    while siv.is_running() {
         siv.step();
         step += 1;
         let point = rand_point(3);
@@ -323,12 +309,22 @@ fn main() {
                 &bmp,
             );
             
-            // Update visualization every 10,000 steps
-            if step % 10_000 == 0 {
+            if /*step % 10 == 0*/ true {
+                // Update canvas with new state
+                if let Some(mut canvas) = siv.find_name::<Canvas<Array2<bool>>>("canvas") {
+                    *canvas.state_mut() = state.slice(s![.., .., 0]).to_owned();
+                }
                 siv.refresh();
             }
         }
-    }    
-    // Run the UI XXX
-    //siv.run();
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
+fn main() {
+    // Initialize state, sites, and bitmap
+    let (mut state, mut sites, bmp) = init_state();
+    run_sim(state, sites, bmp);
 }
