@@ -1,4 +1,4 @@
-use cursive::{views:: { Dialog }, Cursive, View};
+use cursive::views::Dialog;
 use ui::SideView;
 use ndarray::*;
 use rand::prelude::*;
@@ -94,9 +94,9 @@ fn random_direct_neighbor(point: Point3, state: &Array3<bool>) -> Option<Point3>
             let ny = y as isize + dy;
             let nz = z as isize + dz;
             
-            if nx >= 0 && nx < L as isize && 
-               ny >= 0 && ny < L as isize && 
-               nz >= 0 && nz < L as isize {
+            if nx >= 0 && nx < state.dim().0 as isize && 
+               ny >= 0 && ny < state.dim().1 as isize && 
+               nz >= 0 && nz < state.dim().2 as isize {
                 Some((nx as usize, ny as usize, nz as usize))
             } else {
                 None
@@ -268,14 +268,16 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
     (state, sites, bmp)
 }
 
+#[cfg(test)]
+mod tests;
+
 fn main() {
     // Initialize state, sites, and bitmap
     let (mut state, mut sites, bmp) = init_state();
-    println!("{:#?}", sites);
 
     // Initialize visualization with cursive
     let siv = cursive::default();
-    let side_view = SideView::new(state.slice(s![.., .., 0]).to_owned());
+    let side_view = SideView::new(&state.slice(s![.., .., 0]).to_owned());
     let mut siv = siv.into_runner();
     
     // Create a canvas to display the state
@@ -295,12 +297,15 @@ fn main() {
     siv.add_layer(
         Dialog::around(side_view)
             .title("Pattern Formation Simulation")
-            .button("q", |s| s.quit())
     );
     
+    siv.add_global_callback('q', |s| s.quit());
+    siv.refresh();
+
     // Create a thread for simulation
     let mut step = 0;
     loop {
+        siv.step();
         step += 1;
         let point = rand_point(3);
         let (x1, y1, z1) = (point[0], point[1], point[2]);
@@ -323,7 +328,6 @@ fn main() {
                 siv.refresh();
             }
         }
-        siv.step();
     }    
     // Run the UI XXX
     //siv.run();
