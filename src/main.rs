@@ -9,7 +9,7 @@ mod ui;
 
 type Point2 = (usize, usize);
 type Point3 = (usize, usize, usize);
-const L: usize = 20;
+const L: usize = 50;
 const N_SITES: usize = 6;
 const N_TRIALS: usize = 100;
 /*
@@ -211,27 +211,45 @@ fn try_exchange(
 fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
     // Initialize the bitmap
     let bmp: Array2<bool> = array![
-        [false, false, true, false, false],
-        [false, false, true, false, false],
-        [true, true, true, true, true],
-        [false, false, true, false, false],
-        [false, false, true, false, false]
+        [false, false, false, false, false, false, false, true, true, true, true, true, true, true, false, false, false, false, false, false, false],
+        [false, false, false, false, false, true, true, false, false, false, true, false, false, false, true, true, false, false, false, false, false],
+        [false, false, false, false, true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false, false],
+        [false, false, false, true, false, false, false, false, false, false, true, false, false, false, false, false, false, true, false, false, false],
+        [false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, true, false, false],
+        [false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false],
+        [false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false],
+        [true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, true],
+        [true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, true],
+        [true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, true],
+        [true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, true],
+        [true, false, false, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, true],
+        [true, false, false, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, true],
+        [true, false, false, false, false, false, false, false, true, false, true, false, true, false, false, false, false, false, false, false, true],
+        [false, true, false, false, false, false, false, true, false, false, true, false, false, true, false, false, false, false, false, true, false],
+        [false, true, false, false, false, false, false, true, false, false, true, false, false, true, false, false, false, false, false, true, false],
+        [false, false, true, false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true, false, false],
+        [false, false, false, true, false, true, false, false, false, false, true, false, false, false, false, true, false, true, false, false, false],
+        [false, false, false, false, true, true, false, false, false, false, true, false, false, false, false, true, true, false, false, false, false],
+        [false, false, false, false, true, true, true, false, false, false, true, false, false, false, true, true, true, false, false, false, false],
+        [false, false, false, false, false, false, false, true, true, true, true, true, true, true, false, false, false, false, false, false, false],
     ];
+    
     assert!(
         bmp.dim().0 == bmp.dim().1,
         "number of arrays == length of first array"
     );
 
     // Count true values in bmp
-    let tot: usize = bmp.iter().filter(|&&b| b).count();
-    let r = tot / (bmp.dim().0 * bmp.dim().1);
+    let tot: usize = bmp.iter().map(|&b| b as usize).sum();
+    println!("total number of true bits in bmp: {}", tot);
+    let r: f64 = tot as f64 / (bmp.dim().0 * bmp.dim().1) as f64;
 
     // Initialize state with random bits
     let mut state = Array3::<bool>::from_elem((L, L, L), false);
     let mut i = 0;
-
+    println!("L.pow(3) * r: {}", L.pow(3) as f64 * r);
     // flip some bits
-    while i < L.pow(3) * r {
+    while (i as f64) < L.pow(3) as f64 * r {
         let points = rand_point(3);
         let (x, y, z) = (points[0], points[1], points[2]);
 
@@ -240,6 +258,7 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
             i += 1;
         }
     }
+    println!("attempted to flip bits {} times.", i);
 
     // Initialize sites
     let mut sites: Vec<Option<Point2>> = Vec::new();
@@ -298,7 +317,7 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
         
         if let Some((x2, y2, z2)) = random_direct_neighbor((x1, y1, z1), &state) {
             let p_anyway = 0.01;
-            let p_exchange = 0.7;
+            let p_exchange = 0.8;
             try_exchange(
                 p_anyway,
                 p_exchange,
@@ -309,7 +328,7 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
                 &bmp,
             );
             
-            if /*step % 10 == 0*/ true {
+            if /*step % 1_000 == 0*/ true {
                 // Update canvas with new state
                 if let Some(mut canvas) = siv.find_name::<Canvas<Array2<bool>>>("canvas") {
                     *canvas.state_mut() = state.slice(s![.., .., 0]).to_owned();
@@ -326,5 +345,16 @@ mod tests;
 fn main() {
     // Initialize state, sites, and bitmap
     let (mut state, mut sites, bmp) = init_state();
+    println!("Initial state:");
+    for z in 0..state.dim().2 {
+        println!("Layer {}:", z);
+        for i in 0..state.dim().0 {
+            for j in 0..state.dim().1 {
+                print!("{}", if state[[i, j, z]] { "x" } else { "." });
+            }
+            println!();
+        }
+        println!();
+    }
     run_sim(state, sites, bmp);
 }
