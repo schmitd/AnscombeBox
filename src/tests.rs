@@ -1,5 +1,13 @@
 use super::*;
 
+
+#[test]
+fn test_xor() {
+    let slice: Array2<bool> = array![[true, false, true], [false, true, false], [true, false, true]];
+    let bmp: Array2<bool> = array![[true, false, true], [false, false, false], [true, true, false]];
+    let result: Array2<bool> = array![[false, false, false], [false, true, false], [false, true, true]];
+    assert_eq!(xor(&slice, &bmp), result);
+}
 #[test]
 fn test_goodness() {
     let bmp: Array2<bool> = array![

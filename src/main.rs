@@ -1,15 +1,11 @@
-use cursive::{views::{Dialog, NamedView, Canvas}, View, Printer, Vec2};
-use ui::SideView;
+use cursive::{views::{NamedView, Canvas}, View, Printer, Vec2};
 use ndarray::*;
 use rand::prelude::*;
 use std::vec;
-// XXX use std::ops::Deref;
-
-mod ui;
 
 type Point2 = (usize, usize);
 type Point3 = (usize, usize, usize);
-const L: usize = 50;
+const L: usize = 60;
 const N_SITES: usize = 6;
 const N_TRIALS: usize = 100;
 /*
@@ -175,8 +171,8 @@ fn try_exchange(
     
     if new_goodness > current_goodness {
         // Exchange improves the pattern, keep it
-        // Check if the pattern is now good enough (e.g., > 0.9)
-        if new_goodness > 0.9 {
+        // Check if the pattern is now good enough (e.g., > 0.98)
+        if new_goodness > 0.98 {
             // Delete site from the list
             sites[site_idx] = None;
             
@@ -233,7 +229,6 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
         [false, false, false, false, true, true, true, false, false, false, true, false, false, false, true, true, true, false, false, false, false],
         [false, false, false, false, false, false, false, true, true, true, true, true, true, true, false, false, false, false, false, false, false],
     ];
-    
     assert!(
         bmp.dim().0 == bmp.dim().1,
         "number of arrays == length of first array"
@@ -291,7 +286,6 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
 fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<bool>) {
     // Initialize visualization with cursive
     let siv = cursive::default();
-    // let side_view = NamedView::new("side", SideView::new(state.slice(s![.., .., 0]).to_owned()));
     let mut siv = siv.into_runner();
     
     // Create Canvas without capturing state
@@ -310,7 +304,6 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
 
     let mut step = 0;
     while siv.is_running() {
-        siv.step();
         step += 1;
         let point = rand_point(3);
         let (x1, y1, z1) = (point[0], point[1], point[2]);
@@ -328,11 +321,12 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
                 &bmp,
             );
             
-            if /*step % 1_000 == 0*/ true {
+            if step % 100_000 == 0 {
                 // Update canvas with new state
                 if let Some(mut canvas) = siv.find_name::<Canvas<Array2<bool>>>("canvas") {
                     *canvas.state_mut() = state.slice(s![.., .., 0]).to_owned();
                 }
+                siv.step();
                 siv.refresh();
             }
         }
@@ -344,17 +338,6 @@ mod tests;
 
 fn main() {
     // Initialize state, sites, and bitmap
-    let (mut state, mut sites, bmp) = init_state();
-    println!("Initial state:");
-    for z in 0..state.dim().2 {
-        println!("Layer {}:", z);
-        for i in 0..state.dim().0 {
-            for j in 0..state.dim().1 {
-                print!("{}", if state[[i, j, z]] { "x" } else { "." });
-            }
-            println!();
-        }
-        println!();
-    }
+    let (state, sites, bmp) = init_state();
     run_sim(state, sites, bmp);
 }
