@@ -2,6 +2,7 @@ use cursive::{views::{NamedView, Canvas}, View, Printer, Vec2};
 use ndarray::*;
 use rand::prelude::*;
 use std::vec;
+use cursive::event::Key;
 
 type Point2 = (usize, usize);
 type Point3 = (usize, usize, usize);
@@ -180,7 +181,7 @@ fn try_exchange(
             let mut best_site: Option<Point2> = None;
             let mut best_goodness: f32 = 0.0;
             
-            for _ in 0..N_TRIALS { // Try 100 random positions XXX maybe deduplicate this logic that's also in init_state??? Would that follow instructions?
+            for _ in 0..N_TRIALS { // Try 100 random positions XXX maybe deduplicate this logic that's also in init_state?? 
                 let point = rand_point(2);
                 let s: Point2 = (point[0], point[1]);
                 
@@ -256,7 +257,7 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
     println!("attempted to flip bits {} times.", i);
 
     // Initialize sites
-    let mut sites: Vec<Option<Point2>> = Vec::new();
+    let mut sites: Vec<Option<Point2>> = Vec::new(); // XXX why is the Option necessary?
 
     for _ in 0..N_SITES {
         let (mut best_site, mut best_goodness): (Option<Point2>, f32) = (None, 0.0);
@@ -283,7 +284,23 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
     (state, sites, bmp)
 }
 
-fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<bool>) {
+
+fn move_player(key: char, player: &mut Point2) {
+    player = match key {
+        'w' => &mut (player.0,     player.1 + 1),
+        'a' => &mut (player.0 - 1, player.1),
+        's' => &mut (player.0,     player.1 - 1),
+        'd' => &mut (player.0 + 1, player.1),
+        _ => player
+    };
+}
+
+fn force_site(player: Point2, sites: &mut Vec<Option<Point2>>) {
+    sites.push(Some(player)); // @ TODO FIX so the player only adds one site  that is properly replaced (N_SITES + 1)
+    // should that go at the end of the sites array? ... maybe it's time to make try_exchange a proper system and sites a proper entity
+}
+
+fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<bool>, mut player: Point2) {
     // Initialize visualization with cursive
     let siv = cursive::default();
     let mut siv = siv.into_runner();
@@ -292,7 +309,7 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
     let canvas = Canvas::new(state.slice(s![.., .., 0]).to_owned())
         .with_draw(|grid: &Array2<bool>, printer: &Printer| {
             for (pos, value) in grid.indexed_iter() {
-                let ch = if *value { "█" } else { "." };
+                let ch = if *value { "█" } else { "." }; // XXX add another condition or fix this code to hilight player position
                 printer.print((pos.1, pos.0), ch);
             }
         })
@@ -300,6 +317,15 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
 
     siv.add_layer(NamedView::new("canvas", canvas));
     siv.add_global_callback('q', |s| s.quit());
+
+    // add WASD
+    siv.add_global_callback('w', |_| move_player('w', &mut player));
+    siv.add_global_callback('a', |_| move_player('a', &mut player));
+    siv.add_global_callback('s', |_| move_player('s', &mut player));
+    siv.add_global_callback('d', |_| move_player('d', &mut player));
+    // press enter to force a new site at player 
+    siv.add_global_callback(Key::Enter, |_| force_site(player, &mut sites));
+            
     siv.refresh();
 
     let mut step = 0;
@@ -328,7 +354,7 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
                 }
                 siv.step();
                 siv.refresh();
-            }
+           }
         }
     }
 }
@@ -339,5 +365,7 @@ mod tests;
 fn main() {
     // Initialize state, sites, and bitmap
     let (state, sites, bmp) = init_state();
-    run_sim(state, sites, bmp);
+    let player = (0,0);
+    
+    run_sim(state, sites, bmp, player);
 }
