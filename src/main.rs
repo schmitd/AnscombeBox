@@ -3,12 +3,16 @@ use ndarray::*;
 use rand::prelude::*;
 use std::vec;
 use cursive::event::Key;
+mod state;
+use state::GameState;
 
 type Point2 = (usize, usize);
 type Point3 = (usize, usize, usize);
 const L: usize = 60;
 const N_SITES: usize = 6;
 const N_TRIALS: usize = 100;
+
+
 /*
 const BMP : [[bool; 5]; 5] =
            [[false, false, true,  false, false],
@@ -285,28 +289,15 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
 }
 
 
-fn move_player(key: char, player: &mut Point2) {
-    player = match key {
-        'w' => &mut (player.0,     player.1 + 1),
-        'a' => &mut (player.0 - 1, player.1),
-        's' => &mut (player.0,     player.1 - 1),
-        'd' => &mut (player.0 + 1, player.1),
-        _ => player
-    };
-}
 
-fn force_site(player: Point2, sites: &mut Vec<Option<Point2>>) {
-    sites.push(Some(player)); // @ TODO FIX so the player only adds one site  that is properly replaced (N_SITES + 1)
-    // should that go at the end of the sites array? ... maybe it's time to make try_exchange a proper system and sites a proper entity
-}
 
-fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<bool>, mut player: Point2) {
+fn run_sim(game_state: GameState) {
     // Initialize visualization with cursive
     let siv = cursive::default();
     let mut siv = siv.into_runner();
     
-    // Create Canvas without capturing state
-    let canvas = Canvas::new(state.slice(s![.., .., 0]).to_owned())
+    // Create Canvas with initial state
+    let canvas = Canvas::new(game_state.state.slice(s![.., .., 0]).to_owned())
         .with_draw(|grid: &Array2<bool>, printer: &Printer| {
             for (pos, value) in grid.indexed_iter() {
                 let ch = if *value { "█" } else { "." }; // XXX add another condition or fix this code to hilight player position
@@ -318,43 +309,77 @@ fn run_sim(mut state: Array3<bool>, mut sites: Vec<Option<Point2>>, bmp: Array2<
     siv.add_layer(NamedView::new("canvas", canvas));
     siv.add_global_callback('q', |s| s.quit());
 
-    // add WASD
-    siv.add_global_callback('w', |_| move_player('w', &mut player));
-    siv.add_global_callback('a', |_| move_player('a', &mut player));
-    siv.add_global_callback('s', |_| move_player('s', &mut player));
-    siv.add_global_callback('d', |_| move_player('d', &mut player));
+    siv.set_user_data(game_state);
+
+    // add WASD inputs
+    siv.add_global_callback('w', |s| {
+        s.with_user_data(|game_state: &mut GameState| {
+            game_state.move_player('w');
+        });
+    });
+    siv.add_global_callback('a', |s| {
+        s.with_user_data(|game_state: &mut GameState| {
+            game_state.move_player('a');
+        });
+    });
+    siv.add_global_callback('s', |s| {
+        s.with_user_data(|game_state: &mut GameState| {
+            game_state.move_player('s');
+        });
+    });
+    siv.add_global_callback('d', |s| {
+        s.with_user_data(|game_state: &mut GameState| {
+            game_state.move_player('d');
+        });
+    });
+    
     // press enter to force a new site at player 
-    siv.add_global_callback(Key::Enter, |_| force_site(player, &mut sites));
+    siv.add_global_callback(Key::Enter, |s| {
+        s.with_user_data(|game_state: &mut GameState| {
+            game_state.force_site();
+        });
+    });
             
     siv.refresh();
 
     let mut step = 0;
     while siv.is_running() {
         step += 1;
-        let point = rand_point(3);
-        let (x1, y1, z1) = (point[0], point[1], point[2]);
         
-        if let Some((x2, y2, z2)) = random_direct_neighbor((x1, y1, z1), &state) {
-            let p_anyway = 0.01;
-            let p_exchange = 0.8;
-            try_exchange(
-                p_anyway,
-                p_exchange,
-                &mut sites,
-                (x1, y1, z1),
-                (x2, y2, z2),
-                &mut state,
-                &bmp,
-            );
+        // Access game state for simulation
+        siv.with_user_data(|game_state: &mut GameState| {
+            let point = rand_point(3);
+            let (x1, y1, z1) = (point[0], point[1], point[2]);
             
-            if step % 100_000 == 0 {
-                // Update canvas with new state
+            if let Some((x2, y2, z2)) = random_direct_neighbor((x1, y1, z1), &game_state.state) {
+                let p_anyway = 0.01;
+                let p_exchange = 0.8;
+                try_exchange(
+                    p_anyway,
+                    p_exchange,
+                    &mut game_state.sites,
+                    (x1, y1, z1),
+                    (x2, y2, z2),
+                    &mut game_state.state,
+                    &game_state.bmp,
+                );
+            }
+        });
+        
+        // Update canvas every 100,000 steps
+        if step % 100_000 == 0 {
+            // Get the current state for canvas update
+            if let Some(current_state) = siv.with_user_data(|game_state: &mut GameState| {
+                game_state.state.slice(s![.., .., 0]).to_owned()
+            }) {
+                // Update canvas with the current state
                 if let Some(mut canvas) = siv.find_name::<Canvas<Array2<bool>>>("canvas") {
-                    *canvas.state_mut() = state.slice(s![.., .., 0]).to_owned();
+                    *canvas.state_mut() = current_state;
                 }
-                siv.step();
-                siv.refresh();
-           }
+            }
+            
+            siv.step();
+            siv.refresh();
         }
     }
 }
@@ -366,6 +391,12 @@ fn main() {
     // Initialize state, sites, and bitmap
     let (state, sites, bmp) = init_state();
     let player = (0,0);
+    let game_state = GameState {
+        player,
+        state,
+        sites,
+        bmp,
+    };
     
-    run_sim(state, sites, bmp, player);
+    run_sim(game_state);
 }
