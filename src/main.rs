@@ -6,8 +6,12 @@ use cursive::{
 use ndarray::*;
 use rand::prelude::*;
 
+mod bitmap_loader;
+mod player;
 mod site;
 mod state;
+use bitmap_loader::{load_bitmap_from_bmp, load_bitmaps_from_directory};
+use player::Player;
 use site::SiteManager;
 use state::{GameState, Point2, GRID_SIZE, N_SITES, N_TRIALS};
 
@@ -33,30 +37,25 @@ fn create_custom_bitmaps() -> Vec<Array2<bool>> {
     ]
 }
 
-// Example function to demonstrate site management
-fn demonstrate_site_management() {
-    let mut site_manager = SiteManager::new();
-
-    // Add some default sites
-    site_manager.add_site((10, 10));
-    site_manager.add_site((20, 20));
-
-    // Add custom sites with different bitmaps
-    let custom_bitmaps = create_custom_bitmaps();
-    site_manager.add_custom_site((30, 30), custom_bitmaps[0].clone());
-    site_manager.add_custom_site((40, 40), custom_bitmaps[1].clone());
-
-    println!("Total sites: {}", site_manager.total_count());
-    println!("Active sites: {}", site_manager.active_count());
-
-    // Show how to access sites
-    for site in site_manager.get_active_sites() {
-        println!(
-            "Site at {:?} with custom bitmap: {}",
-            site.position,
-            site.custom_bitmap.is_some()
-        );
+// Function to load bitmaps from files
+fn load_bitmaps_from_files() -> Vec<Array2<bool>> {
+    let mut bitmaps = Vec::new();
+    
+    // Try to load bitmaps from a "bitmaps" directory if it exists
+    if let Ok(loaded_bitmaps) = load_bitmaps_from_directory("bitmaps") {
+        println!("Loaded {} bitmaps from 'bitmaps' directory", loaded_bitmaps.len());
+        bitmaps.extend(loaded_bitmaps);
+    } else {
+        println!("No 'bitmaps' directory found, using default bitmaps");
     }
+    
+    // If no bitmaps were loaded from files, use the default ones
+    if bitmaps.is_empty() {
+        println!("Using default custom bitmaps");
+        bitmaps = create_custom_bitmaps();
+    }
+    
+    bitmaps
 }
 
 fn goodness(cords: &Point2, side: &Array3<bool>, bmp: &Array2<bool>) -> f32 {
@@ -104,108 +103,16 @@ fn rand_point(n: usize) -> Vec<usize> {
     ret
 }
 
-fn collides(s: Point2, sites: &Vec<Option<Point2>>, site_shape: (usize, usize)) -> bool {
-    for site in sites.iter().flatten() {
-        // Check if the two rectangles overlap
-        let s_end = (s.0 + site_shape.0, s.1 + site_shape.1);
-        let site_end = (site.0 + site_shape.0, site.1 + site_shape.1);
 
-        // Check for overlap in both dimensions
-        if s.0 < site_end.0 && s_end.0 > site.0 && s.1 < site_end.1 && s_end.1 > site.1 {
-            return true;
-        }
-    }
-    false
-}
 
-fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
-    // Initialize the bitmap
-    let bmp: Array2<bool> = array![
-        [
-            false, false, false, false, false, false, false, true, true, true, true, true, true,
-            true, false, false, false, false, false, false, false
-        ],
-        [
-            false, false, false, false, false, true, true, false, false, false, true, false, false,
-            false, true, true, false, false, false, false, false
-        ],
-        [
-            false, false, false, false, true, false, false, false, false, false, true, false,
-            false, false, false, false, true, false, false, false, false
-        ],
-        [
-            false, false, false, true, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, true, false, false, false
-        ],
-        [
-            false, false, true, false, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, false, true, false, false
-        ],
-        [
-            false, true, false, false, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, false, false, true, false
-        ],
-        [
-            false, true, false, false, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, false, false, true, false
-        ],
-        [
-            true, false, false, false, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, false, false, false, true
-        ],
-        [
-            true, false, false, false, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, false, false, false, true
-        ],
-        [
-            true, false, false, false, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, false, false, false, true
-        ],
-        [
-            true, false, false, false, false, false, false, false, false, false, true, false,
-            false, false, false, false, false, false, false, false, true
-        ],
-        [
-            true, false, false, false, false, false, false, false, false, true, true, true, false,
-            false, false, false, false, false, false, false, true
-        ],
-        [
-            true, false, false, false, false, false, false, false, false, true, true, true, false,
-            false, false, false, false, false, false, false, true
-        ],
-        [
-            true, false, false, false, false, false, false, false, true, false, true, false, true,
-            false, false, false, false, false, false, false, true
-        ],
-        [
-            false, true, false, false, false, false, false, true, false, false, true, false, false,
-            true, false, false, false, false, false, true, false
-        ],
-        [
-            false, true, false, false, false, false, false, true, false, false, true, false, false,
-            true, false, false, false, false, false, true, false
-        ],
-        [
-            false, false, true, false, false, false, true, false, false, false, true, false, false,
-            false, true, false, false, false, true, false, false
-        ],
-        [
-            false, false, false, true, false, true, false, false, false, false, true, false, false,
-            false, false, true, false, true, false, false, false
-        ],
-        [
-            false, false, false, false, true, true, false, false, false, false, true, false, false,
-            false, false, true, true, false, false, false, false
-        ],
-        [
-            false, false, false, false, true, true, true, false, false, false, true, false, false,
-            false, true, true, true, false, false, false, false
-        ],
-        [
-            false, false, false, false, false, false, false, true, true, true, true, true, true,
-            true, false, false, false, false, false, false, false
-        ],
-    ];
+fn init_state() -> (Array3<bool>, SiteManager, Array2<bool>, Array2<bool>) {
+    // Initialize the main bitmap (try to load from file first)
+    let bmp: Array2<bool> = if let Ok(loaded_bmp) = load_bitmap_from_bmp("main_bitmap.bmp") {
+        println!("Loaded main bitmap from 'main_bitmap.bmp'");
+        loaded_bmp
+    } else {
+        panic!("No 'main_bitmap.bmp' found!");
+    };
     assert!(
         bmp.dim().0 == bmp.dim().1,
         "number of arrays == length of first array"
@@ -234,7 +141,7 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
     //println!("attempted to flip bits {} times.", i);
 
     // Initialize sites
-    let mut sites: Vec<Option<Point2>> = Vec::new(); // XXX why is the Option necessary?
+    let mut sites = SiteManager::new();
 
     for _ in 0..N_SITES {
         let (mut best_site, mut best_goodness): (Option<Point2>, f32) = (None, 0.0);
@@ -243,7 +150,7 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
             let point = rand_point(2);
             let s: Point2 = (point[0], point[1]);
 
-            let g = if collides(s, &sites, (bmp.dim().0, bmp.dim().1)) {
+            let g = if sites.collides_with_sites(s, (bmp.dim().0, bmp.dim().1), &bmp) {
                 0.0
             } else {
                 goodness(&s, &state, &bmp)
@@ -255,10 +162,20 @@ fn init_state() -> (Array3<bool>, Vec<Option<Point2>>, Array2<bool>) {
             }
         }
 
-        sites.push(best_site);
+        if let Some(site_pos) = best_site {
+            sites.add_site(site_pos);
+        }
     }
 
-    (state, sites, bmp)
+    // Initialize the player bitmap (try to load from file first)
+    let player_bmp: Array2<bool> = if let Ok(loaded_player_bmp) = load_bitmap_from_bmp("player_bitmap.bmp") {
+        println!("Loaded player bitmap from 'player_bitmap.bmp'");
+        loaded_player_bmp
+    } else {
+        panic!("No 'player_bitmap.bmp' found!");
+    };
+
+    (state, sites, bmp, player_bmp)
 }
 
 fn run_sim(game_state: GameState) {
@@ -358,12 +275,12 @@ fn run_sim(game_state: GameState) {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod test_bitmap_loading;
 
 fn main() {
-    // Demonstrate the new site system
-    demonstrate_site_management();
-
-    let (state, sites, bmp) = init_state();
-    let game_state = GameState::new(state, sites, bmp);
+    let (state, sites, bmp, player_bmp) = init_state();
+    let player = Player::new((0, 0), player_bmp);
+    let game_state = GameState::new(state, sites, bmp, player);
     run_sim(game_state);
 }

@@ -1,11 +1,13 @@
 use ndarray::*;
 use rand::prelude::*;
+use crate::site::SiteManager;
+use crate::player::Player;
 
 pub type Point2 = (usize, usize);
 pub type Point3 = (usize, usize, usize);
 
 pub const GRID_SIZE: usize = 60;
-pub const N_SITES: usize = 6;
+pub const N_SITES: usize = 4;
 pub const N_TRIALS: usize = 100;
 pub const DISPLAY_UPDATE_INTERVAL: usize = 11_000; // if this is too low, cursive becomes the bottleneck
 pub const PATTERN_COMPLETION_THRESHOLD: f32 = 0.98;
@@ -14,19 +16,19 @@ pub const PROBABILITY_EXCHANGE: f64 = 0.8;
 
 pub struct GameState {
     pub state: Array3<bool>,
-    pub sites: Vec<Option<Point2>>,
+    pub sites: SiteManager,
     pub bmp: Array2<bool>,
-    pub player: Point2,
+    pub player: Player,
     step_count: usize,
 }
 
 impl GameState {
-    pub fn new(state: Array3<bool>, sites: Vec<Option<Point2>>, bmp: Array2<bool>) -> Self {
+    pub fn new(state: Array3<bool>, sites: SiteManager, bmp: Array2<bool>, player: Player) -> Self {
         Self {
             state,
             sites,
             bmp,
-            player: (0, 0),
+            player,
             step_count: 0,
         }
     }
@@ -35,25 +37,25 @@ impl GameState {
     pub fn move_player(&mut self, direction: char) {
         match direction {
             'w' => {
-                if self.player.0 > 0 {
-                    self.player.0 -= 1;
+                if self.player.position.0 > 0 {
+                    self.player.position.0 -= 1;
                 }
             }
 
             'a' => {
-                if self.player.1 > 0 {
-                    self.player.1 -= 1;
+                if self.player.position.1 > 0 {
+                    self.player.position.1 -= 1;
                 }
             }
             's' => {
-                if self.player.0 < GRID_SIZE - 1 {
-                    self.player.0 += 1;
+                if self.player.position.0 < GRID_SIZE - 1 {
+                    self.player.position.0 += 1;
                 }
             }
 
             'd' => {
-                if self.player.1 < GRID_SIZE - 1 {
-                    self.player.1 += 1;
+                if self.player.position.1 < GRID_SIZE - 1 {
+                    self.player.position.1 += 1;
                 }
             }
             _ => {}
@@ -62,7 +64,7 @@ impl GameState {
 
     // Method to force a new site at player position
     pub fn force_site(&mut self) {
-        self.sites.push(Some(self.player));
+        self.sites.add_custom_site(self.player.position, self.player.bitmap.clone());
     }
 
     // Perform one simulation step
@@ -87,7 +89,7 @@ impl GameState {
 
     // Get render data with player position highlighted
     pub fn get_render_data_with_player(&self) -> (Array2<bool>, Point2) {
-        (self.get_render_slice(), self.player)
+        (self.get_render_slice(), self.player.position)
     }
 
     // Get current step count
@@ -173,15 +175,13 @@ impl GameState {
 
     // Find if either point is within a pattern site
     fn find_involved_site(&self, point: Point3, neighbor: Point3) -> Option<(usize, Point2)> {
-        for (idx, site) in self.sites.iter().enumerate() {
-            if let Some(site_pos) = site {
-                let site_shape = (self.bmp.dim().0, self.bmp.dim().1);
+        for (idx, site) in self.sites.get_active_sites().iter().enumerate() {
+            let site_shape = site.get_dimensions(&self.bmp);
 
-                if self.is_point_in_site(point, *site_pos, site_shape)
-                    || self.is_point_in_site(neighbor, *site_pos, site_shape)
-                {
-                    return Some((idx, *site_pos));
-                }
+            if self.is_point_in_site(point, site.position, site_shape)
+                || self.is_point_in_site(neighbor, site.position, site_shape)
+            {
+                return Some((idx, site.position));
             }
         }
         None
@@ -207,18 +207,30 @@ impl GameState {
         site_idx: usize,
         site_pos: Point2,
     ) {
-        let current_goodness = self.calculate_pattern_goodness(&site_pos);
+        // Get the bitmap used for this site (custom or default)
+        let site_bitmap = self
+            .sites
+            .get_active_sites()
+            .get(site_idx)
+            .map(|s| s.get_bitmap(&self.bmp))
+            .expect("site index invalid");
+
+        let current_goodness = self.calculate_pattern_goodness(&site_pos, site_bitmap);
 
         // Temporarily perform the exchange
         self.state.swap(point, neighbor);
-        let new_goodness = self.calculate_pattern_goodness(&site_pos);
+        let new_goodness = self.calculate_pattern_goodness(&site_pos, site_bitmap);
 
         if new_goodness > current_goodness {
             // Exchange improves the pattern, keep it
             if new_goodness > PATTERN_COMPLETION_THRESHOLD {
-                // Pattern is complete, find a new site
-                self.sites[site_idx] = None;
-                self.sites[site_idx] = self.find_new_site();
+                // Pattern is complete, deactivate the current site and find a new one
+                if let Some(site) = self.sites.get_active_sites_mut().get_mut(site_idx) {
+                    site.deactivate();
+                }
+                if let Some(new_site_pos) = self.find_new_site() {
+                    self.sites.add_site(new_site_pos);
+                }
             }
         } else {
             // Exchange doesn't improve the pattern, revert it
@@ -227,24 +239,24 @@ impl GameState {
     }
 
     // Calculate how well a pattern matches at a given position
-    fn calculate_pattern_goodness(&self, position: &Point2) -> f32 {
+    fn calculate_pattern_goodness(&self, position: &Point2, bitmap: &Array2<bool>) -> f32 {
         // Check if the bitmap would fit within the slice at the given coordinates
-        if position.0 + self.bmp.dim().0 > GRID_SIZE || position.1 + self.bmp.dim().1 > GRID_SIZE {
+        if position.0 + bitmap.dim().0 > GRID_SIZE || position.1 + bitmap.dim().1 > GRID_SIZE {
             return 0.0;
         }
 
         // Extract the 2D slice from the 3D array (z=0 layer)
         let window = self.state.slice(s![
-            position.0..position.0 + self.bmp.dim().0,
-            position.1..position.1 + self.bmp.dim().1,
+            position.0..position.0 + bitmap.dim().0,
+            position.1..position.1 + bitmap.dim().1,
             0
         ]);
 
         // Count matching bits (XOR gives true for mismatches)
         let mut matches = 0;
-        let total_bits = self.bmp.dim().0 * self.bmp.dim().1;
+        let total_bits = bitmap.dim().0 * bitmap.dim().1;
 
-        for ((i, j), &bmp_value) in self.bmp.indexed_iter() {
+        for ((i, j), &bmp_value) in bitmap.indexed_iter() {
             if window[[i, j]] == bmp_value {
                 matches += 1;
             }
@@ -263,7 +275,7 @@ impl GameState {
             let position = (rng.gen_range(0..GRID_SIZE), rng.gen_range(0..GRID_SIZE));
 
             if !self.site_collides_with_existing(position) {
-                let goodness = self.calculate_pattern_goodness(&position);
+                let goodness = self.calculate_pattern_goodness(&position, &self.bmp);
                 if goodness > best_goodness {
                     best_goodness = goodness;
                     best_site = Some(position);
@@ -276,24 +288,6 @@ impl GameState {
 
     // Check if a potential site collides with existing sites
     fn site_collides_with_existing(&self, position: Point2) -> bool {
-        let site_shape = (self.bmp.dim().0, self.bmp.dim().1);
-
-        for existing_site in self.sites.iter().flatten() {
-            // Check if the two rectangles overlap
-            let pos_end = (position.0 + site_shape.0, position.1 + site_shape.1);
-            let existing_end = (
-                existing_site.0 + site_shape.0,
-                existing_site.1 + site_shape.1,
-            );
-
-            if position.0 < existing_end.0
-                && pos_end.0 > existing_site.0
-                && position.1 < existing_end.1
-                && pos_end.1 > existing_site.1
-            {
-                return true;
-            }
-        }
-        false
+        self.sites.collides_with_sites(position, (self.bmp.dim().0, self.bmp.dim().1), &self.bmp)
     }
 }

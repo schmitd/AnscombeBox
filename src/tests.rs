@@ -1,4 +1,5 @@
 use super::*;
+use site::SiteManager;
 
 
 #[test]
@@ -27,23 +28,19 @@ fn test_goodness() {
 }
 #[test]
 fn test_collides_true() {
-    let mut sites: Vec<Option<Point2>> = Vec::new();
-    sites.push(Some((2, 1)));
+    let mut sites = SiteManager::new();
+    sites.add_site((2, 1));
     let site_shape: (usize, usize) = (3, 3);
     let s: Point2 = (0, 0);
-    assert_eq!(collides(s, &sites, site_shape), true);
+    let bmp: Array2<bool> = Array2::from_elem(site_shape, false);
+    assert_eq!(sites.collides_with_sites(s, site_shape, &bmp), true);
 }
 #[test]
 fn test_collides_false() {
-    let mut sites: Vec<Option<Point2>> = Vec::new();
-    sites.push(Some((3, 1)));
+    let mut sites = SiteManager::new();
+    sites.add_site((3, 1));
     let site_shape: (usize, usize) = (3, 3);
     let s: Point2 = (0, 0);
-    assert_eq!(collides(s, &sites, site_shape), false);
-}
-#[test]
-fn test_random_direct_neighbor_isolated_none() {
-    let point: Point3 = (0, 0, 0);
-    let state: Array3<bool> = Array3::from_elem((1, 1, 1), false);
-    assert_eq!(random_direct_neighbor(point, &state), None);
+    let bmp: Array2<bool> = Array2::from_elem(site_shape, false);
+    assert_eq!(sites.collides_with_sites(s, site_shape, &bmp), false);
 }
